@@ -94,10 +94,10 @@ func Eval(doc string) (compoundError float64) {
 
 func IsEnglish(englishness float64, leniency float64) bool {
     const μ = 0.0004
-    const σ = 0.003
+    const σ = 0.002
     if leniency < 0 {
         leniency = 0.75
     }
     deviance := englishness-μ
-    return leniency * math.Abs(deviance) < σ
+    return leniency * math.Abs(deviance) < 2*σ
 }
