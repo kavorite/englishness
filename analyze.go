@@ -3,6 +3,10 @@ package englishness
 import (
     "math"
     "strings"
+    "unicode"
+
+    "golang.org/x/text/transform"
+    "golang.org/x/text/unicode/norm"
 )
 
 func init() {
@@ -11,6 +15,16 @@ func init() {
     TrigramFrequencies.Normalize()
 }
 
+func strip(src string) string {
+    strip := func(r rune) bool {
+        return unicode.Is(unicode.Mn, r)
+    }
+    t := transform.Chain(norm.NFD, transform.RemoveFunc(strip), norm.NFC)
+    stripped, _, _ := transform.String(t, src)
+    return stripped
+}
+
+// NGrams runs forEach over the character tuples present in an input text.
 func NGrams(doc string, n int, forEach func(string)) {
     doc = strings.ToLower(doc)
     k := len(doc) - n + 1
@@ -19,8 +33,12 @@ func NGrams(doc string, n int, forEach func(string)) {
     }
 }
 
+// NgramFrequencies maps English character tuples to their number of
+// occurrences.
 type NgramFrequencies map[string]float64
 
+// Add adds delta to the frequency corresponding to t. If no t frequency is
+// present, it is assumed zero.
 func (F NgramFrequencies) Add(t string, delta float64) {
     if _, ok := F[t]; ok {
         F[t] += delta
@@ -29,11 +47,13 @@ func (F NgramFrequencies) Add(t string, delta float64) {
     }
 }
 
+// Has returns whether t ∈ F.
 func (F NgramFrequencies) Has(t string) bool {
     _, ok := F[t]
     return ok
 }
 
+// Normalize places all the values in F on the closed interval [0, 1].
 func (F NgramFrequencies) Normalize() {
     var sigma float64
     for k := range F {
@@ -44,6 +64,8 @@ func (F NgramFrequencies) Normalize() {
     }
 }
 
+// Residuals returns the difference of the values of the common keys found in F
+// and K.
 func (F NgramFrequencies) Residuals(K NgramFrequencies) (R NgramFrequencies) {
     n := len(F)
     if len(K) < n {
@@ -59,6 +81,7 @@ func (F NgramFrequencies) Residuals(K NgramFrequencies) (R NgramFrequencies) {
     return
 }
 
+// MSE returns the mean squared error of the residuals between F and K.
 func (F NgramFrequencies) MSE(K NgramFrequencies) float64 {
     var sigma float64
     R := F.Residuals(K)
@@ -69,7 +92,7 @@ func (F NgramFrequencies) MSE(K NgramFrequencies) float64 {
     return sigma
 }
 
-func Eval(doc string) (compoundError float64) {
+func Eval(doc string) (englishness float64) {
     mf := make(NgramFrequencies, len(MonogramFrequencies))
     bf := make(NgramFrequencies, len(BigramFrequencies))
     tf := make(NgramFrequencies, len(TrigramFrequencies))
@@ -88,16 +111,19 @@ func Eval(doc string) (compoundError float64) {
     mmse := mf.MSE(MonogramFrequencies)
     bmse := bf.MSE(BigramFrequencies)
     tfse := tf.MSE(TrigramFrequencies)
-    compoundError = math.Sqrt(mmse*mmse + bmse*bmse + tfse*tfse)
+    englishness = math.Sqrt(mmse*mmse + bmse*bmse + tfse*tfse)
     return
 }
 
-func IsEnglish(englishness float64, leniency float64) bool {
-    const μ = 0.0004
+// IsEnglish returns whether the given englishness value is within 2/strictness
+// standard deviations of the median englishness found by an empirical
+// determination. If strictness is negative, a reasonable default is used.
+func IsEnglish(englishness float64, strictness float64) bool {
+    const μ = 0.00035
     const σ = 0.002
-    if leniency < 0 {
-        leniency = 0.75
+    if strictness < 0 {
+        strictness = 0.85
     }
     deviance := englishness-μ
-    return leniency * math.Abs(deviance) < 2*σ
+    return math.Abs(deviance) < 2*σ / strictness
 }
